@@ -4,6 +4,7 @@ import os
 
 import zope.interface
 
+from azure.identity import DefaultAzureCredential
 from azure.mgmt.dns import DnsManagementClient
 from azure.common.client_factory import get_client_from_auth_file
 from azure.mgmt.dns.models import RecordSet, TxtRecord
@@ -15,14 +16,6 @@ from certbot import interfaces
 from certbot.plugins import dns_common
 
 logger = logging.getLogger(__name__)
-
-MSDOCS = 'https://docs.microsoft.com/'
-ACCT_URL = MSDOCS + 'python/azure/python-sdk-azure-authenticate?view=azure-python#mgmt-auth-file'
-AZURE_CLI_URL = MSDOCS + 'cli/azure/install-azure-cli?view=azure-cli-latest'
-AZURE_CLI_COMMAND = ("az ad sp create-for-rbac"
-                     " --name Certbot --sdk-auth --role \"DNS Zone Contributor\""
-                     " --scope /subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<RESOURCE_GROUP_ID"
-                     " > mycredentials.json")
 
 
 @zope.interface.implementer(interfaces.IAuthenticator)
@@ -40,22 +33,13 @@ class Authenticator(dns_common.DNSAuthenticator):
 
     def __init__(self, *args, **kwargs):
         super(Authenticator, self).__init__(*args, **kwargs)
-        self.credentials = None
 
     @classmethod
     def add_parser_arguments(cls, add):  # pylint: disable=arguments-differ
         super(Authenticator, cls).add_parser_arguments(add,
                                                        default_propagation_seconds=60)
-        add('credentials',
-            help=(
-                'Path to Azure DNS service account JSON file. If you already have a Service ' +
-                'Principal with the required permissions, you can create your own file as per ' +
-                'the JSON file format at {0}. ' +
-                'Otherwise, you can create a new Service Principal using the Azure CLI ' +
-                '(available at {1}) by running "az login" then "{2}"' +
-                'This will create file "mycredentials.json" which you should secure, then ' +
-                'specify with this option or with the AZURE_AUTH_LOCATION environment variable.')
-            .format(ACCT_URL, AZURE_CLI_URL, AZURE_CLI_COMMAND),
+        add('subscription',
+            help=('Azure subscription ID in which the DNS zone is located'),
             default=None)
         add('resource-group',
             help=('Resource Group in which the DNS zone is located'),
@@ -70,17 +54,10 @@ class Authenticator(dns_common.DNSAuthenticator):
             raise errors.PluginError('Please specify a resource group using '
                                      '--dns-azure-resource-group <RESOURCEGROUP>')
 
-        if self.conf(
-                'credentials') is None and 'AZURE_AUTH_LOCATION' not in os.environ:
+        if self.conf('subscription') is None:
             raise errors.PluginError(
-                'Please specify credentials file using the '
-                'AZURE_AUTH_LOCATION environment variable or '
-                'using --dns-azure-credentials <file>')
-        else:
-            self._configure_file('credentials',
-                                 'path to Azure DNS service account JSON file')
-
-            dns_common.validate_file_permissions(self.conf('credentials'))
+                'Please specify a subscription ID'
+                'using --dns-azure-subscription <SUBSCRIPTION-ID>')
 
     def _perform(self, domain, validation_name, validation):
         self._get_azure_client().add_txt_record(validation_name,
@@ -92,7 +69,7 @@ class Authenticator(dns_common.DNSAuthenticator):
 
     def _get_azure_client(self):
         return _AzureClient(self.conf('resource-group'),
-                            self.conf('credentials'))
+                            self.conf('subscription'))
 
 
 class _AzureClient(object):
@@ -100,10 +77,10 @@ class _AzureClient(object):
     Encapsulates all communication with the Azure Cloud DNS API.
     """
 
-    def __init__(self, resource_group, account_json=None):
+    def __init__(self, resource_group, subscription_id=None):
         self.resource_group = resource_group
-        self.dns_client = get_client_from_auth_file(DnsManagementClient,
-                                                    auth_path=account_json)
+        credentials = DefaultAzureCredential()
+        self.dns_client = DnsManagementClient(credentials, subscription_id)
 
     def add_txt_record(self, domain, record_content, record_ttl):
         """
