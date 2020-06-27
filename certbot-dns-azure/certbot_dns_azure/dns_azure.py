@@ -4,7 +4,7 @@ import os
 
 import zope.interface
 
-from azure.identity import DefaultAzureCredential
+from .cred_wrapper import CredentialWrapper
 from azure.mgmt.dns import DnsManagementClient
 from azure.common.client_factory import get_client_from_auth_file
 from azure.mgmt.dns.models import RecordSet, TxtRecord
@@ -79,7 +79,7 @@ class _AzureClient(object):
 
     def __init__(self, resource_group, subscription_id=None):
         self.resource_group = resource_group
-        credentials = DefaultAzureCredential()
+        credentials = CredentialWrapper()
         self.dns_client = DnsManagementClient(credentials, subscription_id)
 
     def add_txt_record(self, domain, record_content, record_ttl):

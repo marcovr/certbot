@@ -12,6 +12,7 @@ install_requires = [
     'certbot>=0.21.1',
     'azure-mgmt-dns>=2.0.0',
     'azure-identity',
+    'azure-core',
     'requests>=2.16',
     'mock',
     # For pkg_resources. >=1.0 so pip resolves it to a version cryptography
