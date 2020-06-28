@@ -82,6 +82,15 @@ class _AzureClient(object):
         credentials = CredentialWrapper()
         self.dns_client = DnsManagementClient(credentials, subscription_id)
 
+    def get_existing_records(self, zone):
+        """
+        Returns the list of already existing txt-records
+        """
+        rs = self.dns_client.record_sets.list_by_type(self.resource_group, zone, "TXT").get(0)
+        if len(rs) == 1:
+            return rs[0].txt_records
+        return []
+
     def add_txt_record(self, domain, record_content, record_ttl):
         """
         Add a TXT record using the supplied information.
@@ -92,11 +101,12 @@ class _AzureClient(object):
         :raises certbot.errors.PluginError: if an error occurs communicating with the Azure API
         """
         try:
-            record = RecordSet(ttl=record_ttl,
-                               txt_records=[TxtRecord(value=[record_content])])
             zone = self._find_managed_zone(domain)
             relative_record_name = ".".join(
                 domain.split('.')[0:-len(zone.split('.'))])
+            txts = self.get_existing_records(zone)
+            record = RecordSet(ttl=record_ttl,
+                               txt_records=txts + [TxtRecord(value=[record_content])])
             self.dns_client.record_sets.create_or_update(self.resource_group,
                                                          zone,
                                                          relative_record_name,
